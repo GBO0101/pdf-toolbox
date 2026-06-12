@@ -47,8 +47,8 @@ TOOLS = [
     ToolInfo("merge",     "合併 PDF",     "📄", "多個 PDF 合併為一個",    False),
     ToolInfo("compress",  "壓縮 PDF",     "📦", "最佳化減小 PDF 大小",    True),
     ToolInfo("watermark", "新增浮水印",   "💧", "自訂文字浮水印",         True),
-    ToolInfo("toimage",   "轉圖片",       "🖼️", "PDF 每頁轉為圖片",       True),
-    ToolInfo("wordtopdf", "Word 轉 PDF",  "📝", "Word 文件轉為 PDF",     True),
+    ToolInfo("toimage",   "PDF 轉圖片",   "🖼️", "PDF 每頁轉為圖片",       True),
+    ToolInfo("wordtopdf", "WPS 轉 PDF",   "📝", "WPS/Word 文件轉為 PDF", True),
 ]
 
 
@@ -1018,7 +1018,7 @@ class PDFToolboxApp:
                                command=browse_word_file)
         browse_btn.pack(pady=(0, 4))
 
-        ttk.Label(frame, text="需要安裝 Microsoft Word 才能轉換",
+        ttk.Label(frame, text="需要安裝 WPS Office 或 Microsoft Word 才能轉換",
                   style="BodyDim.TLabel").pack(anchor="w", pady=(0, 4))
 
         self._show_process_btn("轉換為 PDF", self._do_wordtopdf)

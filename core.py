@@ -253,7 +253,7 @@ def get_file_size_str(size_bytes: int) -> str:
 
 def word_to_pdf(input_path: str, output_path: str) -> str:
     """
-    使用 Microsoft Word 將 Word 文件轉換為 PDF
+    使用 WPS Word (或 Microsoft Word) 將 Word 文件轉換為 PDF
     :param input_path: .docx 或 .doc 檔案路徑
     :param output_path: 輸出 PDF 檔案路徑
     :returns: 輸出檔案路徑
@@ -263,21 +263,37 @@ def word_to_pdf(input_path: str, output_path: str) -> str:
     except ImportError:
         raise RuntimeError("需要 pywin32 模組，請執行: pip install pywin32")
 
-    word = win32com.client.Dispatch("Word.Application")
-    word.Visible = False
-    word.DisplayAlerts = False
+    # 依序嘗試 WPS 和 Microsoft Word
+    prog_ids = ["Kwps.Application", "Word.Application"]
+    app = None
+    last_error = None
+    for prog_id in prog_ids:
+        try:
+            app = win32com.client.Dispatch(prog_id)
+            break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if app is None:
+        raise RuntimeError(
+            "找不到 WPS 或 Microsoft Word，請確認已安裝 WPS Office 或 Microsoft Word"
+        )
+
+    app.Visible = False
+    app.DisplayAlerts = False
 
     try:
         abs_in = os.path.abspath(input_path)
         abs_out = os.path.abspath(output_path)
-        doc = word.Documents.Open(abs_in)
+        doc = app.Documents.Open(abs_in)
         doc.SaveAs(abs_out, FileFormat=17)  # 17 = wdFormatPDF
         doc.Close()
     except Exception as e:
-        raise RuntimeError(f"Word 轉換失敗：{e}\n請確認已安裝 Microsoft Word")
+        raise RuntimeError(f"轉換失敗：{e}\n請確認已安裝 WPS Office 或 Microsoft Word")
     finally:
         try:
-            word.Quit()
+            app.Quit()
         except Exception:
             pass
 
