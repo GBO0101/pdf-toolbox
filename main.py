@@ -16,13 +16,6 @@ from core import (
     get_pdf_page_count, get_file_size_str, word_to_pdf, is_word_file,
 )
 
-# ── Windows DPI 感知 ────────────────────────────────────────────────
-try:
-    # 讓 Windows 不要對視窗做位圖縮放，tkinter 自己處理
-    ctypes.windll.shcore.SetProcessDpiAwareness(1)
-except Exception:
-    pass
-
 # ── 常量 ──────────────────────────────────────────────────────────
 APP_TITLE = "📄 PDF 萬能工具箱"
 APP_SUBTITLE = "純本地處理 · 無需上傳 · 安全可靠"
@@ -62,14 +55,13 @@ TOOLS = [
 
 # ── 主应用 ─────────────────────────────────────────────────────────
 class PDFToolboxApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, dpi_scale: float = 1.0):
         self.root = root
+        self.dpi_scale = dpi_scale
         self.root.title(APP_TITLE)
-        self.root.geometry(WINDOW_SIZE)
-        self.root.minsize(700, 620)
         self.root.configure(bg=COLOR_BG)
 
-        # 状态
+        # 狀態
         self.files: List[str] = []
         self.active_tool: Optional[str] = None
         self.processing = False
@@ -80,7 +72,7 @@ class PDFToolboxApp:
         self._setup_styles()
         self._build_ui()
 
-        # 居中显示
+        # 居中顯示
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() - self.root.winfo_width()) // 2
         y = (self.root.winfo_screenheight() - self.root.winfo_height()) // 2
@@ -124,9 +116,8 @@ class PDFToolboxApp:
 
     # ── 构建 UI ───────────────────────────────────────────────────
     def _build_ui(self):
-        # 主容器
-        self.main_frame = ttk.Frame(self.root)
-        self.main_frame.pack(fill="both", expand=True, padx=20, pady=16)
+        # ── 可滾動主容器 ──
+        self._create_scrollable_container()
 
         # ── 头部 ──
         self._build_header()
@@ -145,6 +136,47 @@ class PDFToolboxApp:
 
         # ── 底部 ──
         self._build_footer()
+
+    def _create_scrollable_container(self):
+        """建立可滾動的 Canvas 容器，支援滑鼠滾輪"""
+        self.scroll_canvas = tk.Canvas(self.root, bg=COLOR_BG, highlightthickness=0)
+        self.scroll_bar = tk.Scrollbar(self.root, orient="vertical",
+                                        command=self.scroll_canvas.yview)
+        self.scroll_canvas.configure(yscrollcommand=self.scroll_bar.set)
+
+        self.scroll_bar.pack(side="right", fill="y")
+        self.scroll_canvas.pack(side="left", fill="both", expand=True)
+
+        self.main_frame = ttk.Frame(self.scroll_canvas, style="TFrame",
+                                     padding=(20, 16))
+
+        self._canvas_window_id = self.scroll_canvas.create_window(
+            (0, 0), window=self.main_frame, anchor="nw"
+        )
+
+        # ── 綁定事件 ──
+        def _on_frame_configure(_event=None):
+            self.scroll_canvas.configure(
+                scrollregion=self.scroll_canvas.bbox("all")
+            )
+        self.main_frame.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(event):
+            self.scroll_canvas.itemconfig(self._canvas_window_id,
+                                          width=event.width)
+        self.scroll_canvas.bind("<Configure>", _on_canvas_configure)
+
+        # 滑鼠滾輪
+        def _on_mousewheel(event):
+            self.scroll_canvas.yview_scroll(
+                int(-1 * (event.delta / 120)), "units"
+            )
+        def _bind_wheel(_e):
+            self.scroll_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        def _unbind_wheel(_e):
+            self.scroll_canvas.unbind_all("<MouseWheel>")
+        self.scroll_canvas.bind("<Enter>", _bind_wheel)
+        self.scroll_canvas.bind("<Leave>", _unbind_wheel)
 
     def _build_header(self):
         header = ttk.Frame(self.main_frame)
@@ -1084,18 +1116,29 @@ class PDFToolboxApp:
 def main():
     root = tk.Tk()
 
-    # 根據系統 DPI 縮放 tkinter（解決高解析度文字太小問題）
+    # ── Windows DPI 感知 ──────────────────────────────────────────
+    dpi_scale = 1.0
     try:
+        # 讓 Windows 不要對視窗做位圖縮放
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
         dc = ctypes.windll.user32.GetDC(0)
         dpi = ctypes.windll.gdi32.GetDeviceCaps(dc, 88)  # LOGPIXELSX
         ctypes.windll.user32.ReleaseDC(0, dc)
-        scale = dpi / 96.0
-        if scale > 1.05:
-            root.tk.call('tk', 'scaling', scale * 1.3333)
+        dpi_scale = dpi / 96.0
+        # tkinter 預設 72 DPI，換算 tk scaling 值 = dpi / 72
+        root.tk.call('tk', 'scaling', dpi / 72.0)
     except Exception:
         pass
 
-    app = PDFToolboxApp(root)
+    # ── 按 DPI 縮放視窗大小 ──────────────────────────────────────
+    base_w, base_h = 850, 720
+    w = max(int(base_w * dpi_scale), 700)
+    h = max(int(base_h * dpi_scale), 620)
+    root.geometry(f"{w}x{h}")
+    root.minsize(700, 620)
+
+    # ── 建立應用 ──────────────────────────────────────────────────
+    app = PDFToolboxApp(root, dpi_scale)
     root.mainloop()
 
 
