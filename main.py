@@ -12,7 +12,7 @@ from tkinter import ttk, filedialog, messagebox, colorchooser
 from typing import List, Optional
 from core import (
     merge_pdfs, compress_pdf, add_watermark, pdf_to_images,
-    get_pdf_page_count, get_file_size_str,
+    get_pdf_page_count, get_file_size_str, word_to_pdf, is_word_file,
 )
 
 # ── 常量 ──────────────────────────────────────────────────────────
@@ -44,10 +44,11 @@ class ToolInfo:
 
 
 TOOLS = [
-    ToolInfo("merge",     "合併 PDF",   "📄", "多個 PDF 合併為一個",   False),
-    ToolInfo("compress",  "壓縮 PDF",   "📦", "最佳化減小 PDF 大小",      True),
-    ToolInfo("watermark", "新增浮水印", "💧", "自訂文字浮水印",         True),
-    ToolInfo("toimage",   "轉圖片",     "🖼️", "PDF 每頁轉為圖片",       True),
+    ToolInfo("merge",     "合併 PDF",     "📄", "多個 PDF 合併為一個",    False),
+    ToolInfo("compress",  "壓縮 PDF",     "📦", "最佳化減小 PDF 大小",    True),
+    ToolInfo("watermark", "新增浮水印",   "💧", "自訂文字浮水印",         True),
+    ToolInfo("toimage",   "轉圖片",       "🖼️", "PDF 每頁轉為圖片",       True),
+    ToolInfo("wordtopdf", "Word 轉 PDF",  "📝", "Word 文件轉為 PDF",     True),
 ]
 
 
@@ -371,6 +372,7 @@ class PDFToolboxApp:
             "compress": self._show_compress_options,
             "watermark": self._show_watermark_options,
             "toimage": self._show_toimage_options,
+            "wordtopdf": self._show_wordtopdf_options,
         }
         show_fn = switch.get(tool_key)
         if show_fn:
@@ -962,6 +964,86 @@ class PDFToolboxApp:
                 )
                 msg = f"成功轉換 {len(output_paths)} 頁為 {fmt.upper()} 圖片"
                 self.root.after(0, lambda: self._finish_success(msg, output_paths[0] if output_paths else None))
+            except Exception as e:
+                self.root.after(0, lambda: self._finish_error(str(e)))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    # ── Word 轉 PDF ──────────────────────────────────────────────
+    def _show_wordtopdf_options(self):
+        """Word 轉 PDF 選項"""
+        frame = tk.Frame(self.options_content, bg=COLOR_SURFACE)
+        frame.pack(fill="x", pady=(8, 0))
+
+        tk.Label(frame, text="選擇 Word 檔案",
+                 font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(anchor="w")
+
+        # 顯示已選取的 Word 檔案
+        self.wp_selected_path = tk.StringVar(value="")
+        self.wp_selected_label = tk.Label(
+            frame, text="尚未選擇檔案",
+            font=(FONT_FAMILY, 10), bg="#f8fafc", fg="#94a3b8",
+            anchor="w", padx=8, pady=6, relief="solid", bd=1
+        )
+        self.wp_selected_label.pack(fill="x", pady=(4, 8))
+
+        def browse_word_file():
+            path = filedialog.askopenfilename(
+                title="選擇 Word 文件",
+                filetypes=[
+                    ("Word 文件", "*.docx;*.doc"),
+                    ("所有檔案", "*.*")
+                ]
+            )
+            if path and is_word_file(path):
+                self.wp_selected_path.set(path)
+                name = os.path.basename(path)
+                size = get_file_size_str(os.path.getsize(path))
+                self.wp_selected_label.config(
+                    text=f"📄 {name}（{size}）",
+                    fg=COLOR_TEXT, bg="#f0fdf4"
+                )
+            elif path:
+                messagebox.showwarning("提示", "請選擇 .docx 或 .doc 檔案")
+
+        browse_btn = tk.Button(frame, text="🗁 瀏覽選擇 Word 檔案",
+                               font=(FONT_FAMILY, 10), bg=COLOR_PRIMARY, fg="white",
+                               relief="flat", padx=16, pady=6, cursor="hand2",
+                               activebackground=COLOR_PRIMARY_HOVER, activeforeground="white",
+                               command=browse_word_file)
+        browse_btn.pack(pady=(0, 4))
+
+        ttk.Label(frame, text="需要安裝 Microsoft Word 才能轉換",
+                  style="BodyDim.TLabel").pack(anchor="w", pady=(0, 4))
+
+        self._show_process_btn("轉換為 PDF", self._do_wordtopdf)
+
+    def _do_wordtopdf(self):
+        if self.processing:
+            return
+
+        input_path = self.wp_selected_path.get()
+        if not input_path or not os.path.exists(input_path):
+            messagebox.showwarning("提示", "請先選擇一個 Word 檔案")
+            return
+
+        output = filedialog.asksaveasfilename(
+            title="儲存轉換後的 PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF 檔案", "*.pdf")]
+        )
+        if not output:
+            return
+
+        self._start_processing()
+        self._show_processing("正在轉換 Word 為 PDF（請稍候，Word 正在背景執行）...")
+
+        def run():
+            try:
+                word_to_pdf(input_path, output)
+                name = os.path.basename(output)
+                self.root.after(0, lambda: self._finish_success(
+                    f"✅ 轉換完成！已儲存為 {name}", output))
             except Exception as e:
                 self.root.after(0, lambda: self._finish_error(str(e)))
 

@@ -249,3 +249,42 @@ def get_file_size_str(size_bytes: int) -> str:
         size /= 1024
         i += 1
     return f"{size:.1f} {units[i]}"
+
+
+def word_to_pdf(input_path: str, output_path: str) -> str:
+    """
+    使用 Microsoft Word 將 Word 文件轉換為 PDF
+    :param input_path: .docx 或 .doc 檔案路徑
+    :param output_path: 輸出 PDF 檔案路徑
+    :returns: 輸出檔案路徑
+    """
+    try:
+        import win32com.client
+    except ImportError:
+        raise RuntimeError("需要 pywin32 模組，請執行: pip install pywin32")
+
+    word = win32com.client.Dispatch("Word.Application")
+    word.Visible = False
+    word.DisplayAlerts = False
+
+    try:
+        abs_in = os.path.abspath(input_path)
+        abs_out = os.path.abspath(output_path)
+        doc = word.Documents.Open(abs_in)
+        doc.SaveAs(abs_out, FileFormat=17)  # 17 = wdFormatPDF
+        doc.Close()
+    except Exception as e:
+        raise RuntimeError(f"Word 轉換失敗：{e}\n請確認已安裝 Microsoft Word")
+    finally:
+        try:
+            word.Quit()
+        except Exception:
+            pass
+
+    return output_path
+
+
+def is_word_file(path: str) -> bool:
+    """檢查是否為 Word 檔案"""
+    ext = os.path.splitext(path)[1].lower()
+    return ext in ('.docx', '.doc', '.docm', '.dotx', '.dot')
