@@ -7,6 +7,7 @@ PDF 万能工具箱 - 桌面 GUI 应用
 
 import os
 import threading
+import ctypes
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from typing import List, Optional
@@ -14,6 +15,13 @@ from core import (
     merge_pdfs, compress_pdf, add_watermark, pdf_to_images,
     get_pdf_page_count, get_file_size_str, word_to_pdf, is_word_file,
 )
+
+# ── Windows DPI 感知 ────────────────────────────────────────────────
+try:
+    # 讓 Windows 不要對視窗做位圖縮放，tkinter 自己處理
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    pass
 
 # ── 常量 ──────────────────────────────────────────────────────────
 APP_TITLE = "📄 PDF 萬能工具箱"
@@ -327,8 +335,8 @@ class PDFToolboxApp:
         name_lbl = tk.Label(btn, text=tool.label, font=(FONT_FAMILY, 11, "bold"),
                             bg=COLOR_SURFACE, fg=COLOR_TEXT)
         name_lbl.pack()
-        desc_lbl = tk.Label(btn, text=tool.desc, font=(FONT_FAMILY, 8),
-                            bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY)
+        desc_lbl = tk.Label(btn, text=tool.desc, font=(FONT_FAMILY, 9),
+                             bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY)
         desc_lbl.pack()
 
         # 绑定点击事件
@@ -1075,6 +1083,18 @@ class PDFToolboxApp:
 # ── 启动 ───────────────────────────────────────────────────────────
 def main():
     root = tk.Tk()
+
+    # 根據系統 DPI 縮放 tkinter（解決高解析度文字太小問題）
+    try:
+        dc = ctypes.windll.user32.GetDC(0)
+        dpi = ctypes.windll.gdi32.GetDeviceCaps(dc, 88)  # LOGPIXELSX
+        ctypes.windll.user32.ReleaseDC(0, dc)
+        scale = dpi / 96.0
+        if scale > 1.05:
+            root.tk.call('tk', 'scaling', scale * 1.3333)
+    except Exception:
+        pass
+
     app = PDFToolboxApp(root)
     root.mainloop()
 
