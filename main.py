@@ -292,7 +292,7 @@ class PDFToolboxApp:
 
     # ── 工具区 ────────────────────────────────────────────────────
     def _build_tool_section(self):
-        """四个工具按钮"""
+        """五個工具按鈕（分兩行）"""
         card = ttk.Frame(self.main_frame, style="Card.TFrame")
         card.pack(fill="x", pady=(0, 12))
         inner = tk.Frame(card, bg=COLOR_SURFACE, highlightbackground=COLOR_BORDER,
@@ -302,12 +302,17 @@ class PDFToolboxApp:
         tk.Label(inner, text="⚙️ 選擇工具",
                  font=(FONT_FAMILY, 12, "bold"), bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(anchor="w")
 
-        btn_frame = tk.Frame(inner, bg=COLOR_SURFACE)
-        btn_frame.pack(fill="x", pady=(8, 0))
+        # 第一行：合併、壓縮、浮水印
+        row1 = tk.Frame(inner, bg=COLOR_SURFACE)
+        row1.pack(fill="x", pady=(8, 4))
+        # 第二行：轉圖片、Word 轉 PDF
+        row2 = tk.Frame(inner, bg=COLOR_SURFACE)
+        row2.pack(fill="x")
 
         self.tool_buttons = {}
-        for tool in TOOLS:
-            btn = self._create_tool_button(btn_frame, tool)
+        rows = [row1, row1, row1, row2, row2]  # 前 3 個放 row1，後 2 個放 row2
+        for i, tool in enumerate(TOOLS):
+            btn = self._create_tool_button(rows[i], tool)
             self.tool_buttons[tool.key] = btn
 
     def _create_tool_button(self, parent, tool: ToolInfo):
