@@ -64,6 +64,9 @@ class PDFToolboxApp:
         self.files: List[str] = []
         self.active_tool: Optional[str] = None
         self.processing = False
+        # 合併用：索引順序與勾選狀態（僅 merge tool 使用）
+        self.merge_order: List[int] = []       # self.files 的索引，表示合併順序
+        self.merge_checked: List[bool] = []    # 對應 merge_order，True=勾選
 
         self._setup_styles()
         self._build_ui()
@@ -224,20 +227,67 @@ class PDFToolboxApp:
             title="選擇 PDF 檔案",
             filetypes=[("PDF 檔案", "*.pdf"), ("所有檔案", "*.*")]
         )
+        added = False
         for f in files:
             if f not in self.files and f.lower().endswith('.pdf'):
                 self.files.append(f)
+                added = True
+        if not added:
+            return
         self._refresh_file_list()
         self._hide_result()
+        self._rebuild_merge_state()
+        # 預設選定合併工具
+        self._on_tool_select("merge")
 
     def _on_remove_file(self, idx: int):
         self.files.pop(idx)
         self._refresh_file_list()
+        self._rebuild_merge_state()
+        # 如果還在合併面板就刷新
+        if self.active_tool == "merge":
+            self._switch_options("merge")
 
     def _on_clear_files(self):
         self.files.clear()
+        self.active_tool = None
+        self.merge_order.clear()
+        self.merge_checked.clear()
         self._refresh_file_list()
         self._hide_result()
+        # 清除工具按鈕高亮
+        for btn in self.tool_buttons.values():
+            btn.configure(highlightbackground=COLOR_BORDER, highlightthickness=1)
+            for c in btn.winfo_children():
+                c.configure(bg=COLOR_SURFACE)
+        # 重置選項面板回到提示狀態
+        for w in self.options_content.winfo_children():
+            w.destroy()
+        ttk.Label(self.options_content, text="請先上傳檔案，然後選擇一個工具",
+                  style="BodyDim.TLabel").pack(pady=(12, 4))
+
+    def _rebuild_merge_state(self):
+        """根據目前 self.files 重建合併順序與勾選狀態"""
+        old_order = self.merge_order[:] if hasattr(self, 'merge_order') else []
+        old_checked = self.merge_checked[:] if hasattr(self, 'merge_checked') else []
+
+        n = len(self.files)
+        self.merge_order = []
+        self.merge_checked = []
+
+        # 保留舊順序中仍存在的檔案
+        for idx in old_order:
+            if idx < n:
+                self.merge_order.append(idx)
+                checked = old_checked[len(self.merge_order) - 1] if len(self.merge_order) - 1 < len(old_checked) else True
+                self.merge_checked.append(checked)
+
+        # 新增不在舊順序中的檔案（附加在最後）
+        existing = set(self.merge_order)
+        for i in range(n):
+            if i not in existing:
+                self.merge_order.append(i)
+                self.merge_checked.append(True)
 
     # ── 工具区 ────────────────────────────────────────────────────
     def _build_tool_section(self):
@@ -346,10 +396,133 @@ class PDFToolboxApp:
                   style="BodyDim.TLabel").pack(pady=(12, 4))
 
     def _show_merge_options(self):
-        """合併選項"""
-        self._show_option_hint(f"將按順序合併 {len(self.files)} 個 PDF 檔案")
-        self._show_process_btn("開始合併", self._do_merge)
+        """合併選項 — 可勾選與排序檔案"""
+        self._rebuild_merge_state()
+        n = len(self.files)
+        if n == 0:
+            ttk.Label(self.options_content, text="請先上傳 PDF 檔案",
+                      style="BodyDim.TLabel").pack(pady=(12, 4))
+            return
 
+        # 標題資訊
+        info_frame = tk.Frame(self.options_content, bg=COLOR_SURFACE)
+        info_frame.pack(fill="x", pady=(0, 8))
+        tk.Label(info_frame, text=f"共 {n} 個檔案，已勾選 {sum(self.merge_checked)} 個",
+                 font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY).pack(side="left")
+
+        # 全選 / 取消全選
+        def toggle_all():
+            new_val = not all(self.merge_checked)
+            for i in range(len(self.merge_checked)):
+                self.merge_checked[i] = new_val
+            self._switch_options("merge")
+
+        tk.Button(info_frame, text="全選/取消", font=(FONT_FAMILY, 8),
+                  bg=COLOR_SURFACE, fg=COLOR_PRIMARY, relief="flat", padx=8, pady=0,
+                  cursor="hand2", command=toggle_all).pack(side="right")
+
+        # 可滾動的檔案列表
+        canvas_frame = tk.Frame(self.options_content, bg=COLOR_SURFACE)
+        canvas_frame.pack(fill="x", pady=(0, 8))
+
+        canvas = tk.Canvas(canvas_frame, bg=COLOR_SURFACE, highlightthickness=0,
+                           height=min(n * 44, 220))
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        list_frame = tk.Frame(canvas, bg=COLOR_SURFACE)
+
+        list_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=list_frame, anchor="nw", width=620)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # 顯示檔案行（依 merge_order）
+        for pos, idx in enumerate(self.merge_order):
+            path = self.files[idx]
+            name = os.path.basename(path)
+            size = get_file_size_str(os.path.getsize(path))
+            pages = get_pdf_page_count(path)
+            meta = f"{size}"
+            if pages:
+                meta += f" · {pages} 頁"
+
+            row = tk.Frame(list_frame, bg=COLOR_SURFACE, padx=4, pady=2)
+            row.pack(fill="x")
+
+            # 勾選框
+            checked = tk.BooleanVar(value=self.merge_checked[pos])
+            cb = tk.Checkbutton(row, variable=checked, bg=COLOR_SURFACE,
+                                fg=COLOR_TEXT, selectcolor=COLOR_SURFACE,
+                                command=lambda p=pos, v=checked: self._on_merge_check(p, v))
+            cb.pack(side="left")
+
+            # 序號
+            tk.Label(row, text=f"{pos+1}.", font=(FONT_FAMILY, 10),
+                     bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY, width=3).pack(side="left")
+
+            # 檔名
+            tk.Label(row, text=name, font=(FONT_FAMILY, 10),
+                     bg=COLOR_SURFACE, fg=COLOR_TEXT, anchor="w", width=38).pack(side="left", padx=(2, 0))
+
+            # 大小資訊
+            tk.Label(row, text=meta, font=(FONT_FAMILY, 8),
+                     bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY, width=16).pack(side="left")
+
+            # ▲ 上移按鈕
+            if pos > 0:
+                btn_up = tk.Button(row, text="▲", font=(FONT_FAMILY, 7),
+                                   bg=COLOR_SURFACE, fg="#94a3b8", relief="flat",
+                                   padx=4, pady=0, cursor="hand2",
+                                   activebackground="#eef2ff", activeforeground=COLOR_PRIMARY,
+                                   command=lambda p=pos: self._merge_move(p, -1))
+                btn_up.pack(side="right", padx=(1, 0))
+
+            # ▼ 下移按鈕
+            if pos < len(self.merge_order) - 1:
+                btn_dn = tk.Button(row, text="▼", font=(FONT_FAMILY, 7),
+                                   bg=COLOR_SURFACE, fg="#94a3b8", relief="flat",
+                                   padx=4, pady=0, cursor="hand2",
+                                   activebackground="#eef2ff", activeforeground=COLOR_PRIMARY,
+                                   command=lambda p=pos: self._merge_move(p, 1))
+                btn_dn.pack(side="right", padx=(1, 0))
+
+            # 分隔線
+            tk.Frame(list_frame, bg=COLOR_BORDER, height=1).pack(fill="x")
+
+        if n > 5:
+            scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="x", expand=True)
+
+        checked_count = sum(self.merge_checked)
+        self._show_process_btn(
+            f"合併已勾選的 {checked_count} 個檔案" if checked_count < n else f"開始合併全部 {n} 個檔案",
+            self._do_merge
+        )
+
+    # ── 合併輔助方法 ────────────────────────────────────────────
+    def _on_merge_check(self, pos: int, var: tk.BooleanVar):
+        """合併檔案勾選狀態變更"""
+        if pos < len(self.merge_checked):
+            self.merge_checked[pos] = var.get()
+            # 更新按鈕文字
+            n = len(self.files)
+            checked_count = sum(self.merge_checked)
+            if hasattr(self, 'process_btn') and self.process_btn.winfo_exists():
+                if checked_count < n:
+                    self.process_btn.config(text=f"合併已勾選的 {checked_count} 個檔案")
+                else:
+                    self.process_btn.config(text=f"開始合併全部 {n} 個檔案")
+
+    def _merge_move(self, pos: int, direction: int):
+        """移動合併順序：direction= -1 上移，+1 下移"""
+        new_pos = pos + direction
+        if new_pos < 0 or new_pos >= len(self.merge_order):
+            return
+        # 交換 merge_order 與 merge_checked
+        self.merge_order[pos], self.merge_order[new_pos] = self.merge_order[new_pos], self.merge_order[pos]
+        self.merge_checked[pos], self.merge_checked[new_pos] = self.merge_checked[new_pos], self.merge_checked[pos]
+        # 刷新面板
+        self._switch_options("merge")
+
+    # ──────────────────────────────────────────────────────────────
     def _show_compress_options(self):
         """壓縮選項"""
         tk.Label(self.options_content, text="壓縮程度",
@@ -655,8 +828,16 @@ class PDFToolboxApp:
     def _do_merge(self):
         if self.processing:
             return
-        if len(self.files) < 2:
-            messagebox.showwarning("提示", "合併至少需要 2 個 PDF 檔案")
+
+        # 收集勾選的檔案（依 merge_order 順序）
+        self._rebuild_merge_state()
+        selected = []
+        for pos, idx in enumerate(self.merge_order):
+            if pos < len(self.merge_checked) and self.merge_checked[pos]:
+                selected.append(self.files[idx])
+
+        if len(selected) < 2:
+            messagebox.showwarning("提示", "合併至少需要勾選 2 個 PDF 檔案")
             return
 
         output = filedialog.asksaveasfilename(
@@ -672,9 +853,9 @@ class PDFToolboxApp:
 
         def run():
             try:
-                merge_pdfs(self.files, output)
+                merge_pdfs(selected, output)
                 self.root.after(0, lambda: self._finish_success(
-                    f"成功合併 {len(self.files)} 個檔案", output))
+                    f"成功合併 {len(selected)} 個檔案", output))
             except Exception as e:
                 self.root.after(0, lambda: self._finish_error(str(e)))
 
