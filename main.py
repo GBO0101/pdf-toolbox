@@ -14,6 +14,7 @@ from typing import List, Optional
 from core import (
     merge_pdfs, compress_pdf, add_watermark, pdf_to_images,
     get_pdf_page_count, get_file_size_str, word_to_pdf, is_word_file,
+    is_pdf_encrypted, unlock_pdf,
 )
 
 # ── 常量 ──────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ TOOLS = [
     ToolInfo("compress",  "壓縮 PDF",     "📦", "最佳化減小 PDF 大小",    True),
     ToolInfo("watermark", "新增浮水印",   "💧", "自訂文字浮水印",         True),
     ToolInfo("toimage",   "PDF 轉圖片",   "🖼️", "PDF 每頁轉為圖片",       True),
+    ToolInfo("unlock",    "解鎖 PDF",     "🔓", "移除 PDF 密碼鎖",       True),
     ToolInfo("wordtopdf", "WPS 轉 PDF",   "📝", "WPS/Word 文件轉為 PDF", True),
 ]
 
@@ -345,12 +347,12 @@ class PDFToolboxApp:
         # 第一行：合併、壓縮、浮水印
         row1 = tk.Frame(inner, bg=COLOR_SURFACE)
         row1.pack(fill="x", pady=(8, 4))
-        # 第二行：轉圖片、Word 轉 PDF
+        # 第二行：轉圖片、解鎖、WPS 轉 PDF
         row2 = tk.Frame(inner, bg=COLOR_SURFACE)
         row2.pack(fill="x")
 
         self.tool_buttons = {}
-        rows = [row1, row1, row1, row2, row2]  # 前 3 個放 row1，後 2 個放 row2
+        rows = [row1, row1, row1, row2, row2, row2]  # 前 3 個放 row1，後 3 個放 row2
         for i, tool in enumerate(TOOLS):
             btn = self._create_tool_button(rows[i], tool)
             self.tool_buttons[tool.key] = btn
@@ -417,6 +419,7 @@ class PDFToolboxApp:
             "compress": self._show_compress_options,
             "watermark": self._show_watermark_options,
             "toimage": self._show_toimage_options,
+            "unlock": self._show_unlock_options,
             "wordtopdf": self._show_wordtopdf_options,
         }
         show_fn = switch.get(tool_key)
@@ -1011,6 +1014,157 @@ class PDFToolboxApp:
                 self.root.after(0, lambda: self._finish_success(msg, output_paths[0] if output_paths else None))
             except Exception as e:
                 self.root.after(0, lambda: self._finish_error(str(e)))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    # ── 解鎖 PDF ─────────────────────────────────────────────────
+    def _show_unlock_options(self):
+        """解鎖 PDF 選項"""
+        frame = tk.Frame(self.options_content, bg=COLOR_SURFACE)
+        frame.pack(fill="x", pady=(8, 0))
+
+        tk.Label(frame, text="選擇加密的 PDF 檔案",
+                 font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(anchor="w")
+
+        # 顯示已選取的 PDF 檔案
+        self.ul_selected_path = tk.StringVar(value="")
+        self.ul_selected_label = tk.Label(
+            frame, text="尚未選擇檔案",
+            font=(FONT_FAMILY, 10), bg="#f8fafc", fg="#94a3b8",
+            anchor="w", padx=8, pady=6, relief="solid", bd=1
+        )
+        self.ul_selected_label.pack(fill="x", pady=(4, 8))
+
+        # 加密狀態提示
+        self.ul_status_label = tk.Label(
+            frame, text="",
+            font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY
+        )
+
+        # 密碼輸入區（預設隱藏）
+        self.ul_password_frame = tk.Frame(frame, bg=COLOR_SURFACE)
+
+        tk.Label(self.ul_password_frame, text="輸入 PDF 密碼：",
+                 font=(FONT_FAMILY, 10), bg=COLOR_SURFACE,
+                 fg=COLOR_TEXT).pack(anchor="w")
+
+        pw_entry_frame = tk.Frame(self.ul_password_frame, bg=COLOR_SURFACE)
+        pw_entry_frame.pack(fill="x", pady=(4, 0))
+
+        self.ul_password_var = tk.StringVar(value="")
+        self.ul_password_entry = tk.Entry(
+            pw_entry_frame, textvariable=self.ul_password_var,
+            font=(FONT_FAMILY, 11), show="●", relief="solid", bd=1, width=30
+        )
+        self.ul_password_entry.pack(side="left", padx=(0, 8))
+
+        def toggle_password_visible():
+            if self.ul_password_entry.cget("show") == "●":
+                self.ul_password_entry.configure(show="")
+                pw_toggle_btn.configure(text="🙈 隱藏")
+            else:
+                self.ul_password_entry.configure(show="●")
+                pw_toggle_btn.configure(text="👁️ 顯示")
+
+        pw_toggle_btn = tk.Button(
+            pw_entry_frame, text="👁️ 顯示", font=(FONT_FAMILY, 9),
+            bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY, relief="flat",
+            padx=8, pady=2, cursor="hand2",
+            command=toggle_password_visible
+        )
+        pw_toggle_btn.pack(side="left")
+
+        # 瀏覽按鈕
+        def browse_pdf_file():
+            path = filedialog.askopenfilename(
+                title="選擇加密的 PDF",
+                filetypes=[("PDF 檔案", "*.pdf"), ("所有檔案", "*.*")]
+            )
+            if not path:
+                return
+
+            self.ul_selected_path.set(path)
+            name = os.path.basename(path)
+            size = get_file_size_str(os.path.getsize(path))
+            self.ul_selected_label.config(
+                text=f"📄 {name}（{size}）",
+                fg=COLOR_TEXT, bg="#f0fdf4"
+            )
+
+            # 偵測是否加密
+            if is_pdf_encrypted(path):
+                self.ul_status_label.config(
+                    text="🔒 此 PDF 已加密，請輸入密碼",
+                    fg="#d97706"
+                )
+                self.ul_status_label.pack(anchor="w", pady=(0, 4))
+                self.ul_password_frame.pack(fill="x", pady=(0, 8))
+            else:
+                self.ul_status_label.config(
+                    text="✅ 此 PDF 沒有加密，可直接儲存無鎖版本",
+                    fg=COLOR_SUCCESS
+                )
+                self.ul_status_label.pack(anchor="w", pady=(0, 4))
+                self.ul_password_frame.pack_forget()
+
+        browse_btn = tk.Button(frame, text="🗁 瀏覽選擇 PDF 檔案",
+                                font=(FONT_FAMILY, 10), bg=COLOR_PRIMARY, fg="white",
+                                relief="flat", padx=16, pady=6, cursor="hand2",
+                                activebackground=COLOR_PRIMARY_HOVER, activeforeground="white",
+                                command=browse_pdf_file)
+        browse_btn.pack(pady=(0, 4))
+
+        # 過程按鈕
+        self._show_process_btn("解鎖 PDF", self._do_unlock_pdf)
+
+    def _do_unlock_pdf(self):
+        if self.processing:
+            return
+
+        input_path = self.ul_selected_path.get()
+        if not input_path or not os.path.exists(input_path):
+            messagebox.showwarning("提示", "請先選擇一個 PDF 檔案")
+            return
+
+        if is_pdf_encrypted(input_path):
+            password = self.ul_password_var.get()
+            if not password:
+                messagebox.showwarning("提示", "此 PDF 已加密，請輸入密碼")
+                return
+        else:
+            password = ""
+
+        output = filedialog.asksaveasfilename(
+            title="儲存解鎖後的 PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF 檔案", "*.pdf")]
+        )
+        if not output:
+            return
+
+        self._start_processing()
+        msg = "正在解鎖 PDF..." if password else "正在儲存無加密版本..."
+        self._show_processing(msg)
+
+        def run():
+            try:
+                if password:
+                    unlock_pdf(input_path, output, password)
+                else:
+                    # 沒有加密就直接另存新檔（存檔時會移除任何現有加密）
+                    import fitz
+                    pdf = fitz.open(input_path)
+                    try:
+                        pdf.save(output, encryption=fitz.PDF_ENCRYPT_NONE)
+                    finally:
+                        pdf.close()
+                name = os.path.basename(output)
+                self.root.after(0, lambda: self._finish_success(
+                    f"✅ 解鎖完成！已儲存為 {name}", output))
+            except ValueError as e:
+                self.root.after(0, lambda: self._finish_error(str(e)))
+            except Exception as e:
+                self.root.after(0, lambda: self._finish_error(f"解鎖失敗：{e}"))
 
         threading.Thread(target=run, daemon=True).start()
 

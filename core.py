@@ -304,3 +304,47 @@ def is_word_file(path: str) -> bool:
     """檢查是否為 Word 檔案"""
     ext = os.path.splitext(path)[1].lower()
     return ext in ('.docx', '.doc', '.docm', '.dotx', '.dot')
+
+
+def is_pdf_encrypted(path: str) -> bool:
+    """
+    檢查 PDF 是否有加密（需要密碼才能開啟）
+    :param path: PDF 檔案路徑
+    :returns: True 表示有加密
+    """
+    try:
+        pdf = fitz.open(path)
+        try:
+            return pdf.is_encrypted
+        finally:
+            pdf.close()
+    except Exception:
+        return False
+
+
+def unlock_pdf(input_path: str, output_path: str, password: str) -> str:
+    """
+    解鎖加密的 PDF（使用密碼驗證後存為無加密版本）
+    :param input_path: 輸入 PDF 檔案路徑
+    :param output_path: 輸出 PDF 檔案路徑（無加密）
+    :param password: 使用者密碼
+    :returns: 輸出檔案路徑
+    :raises ValueError: 密碼錯誤或 PDF 未加密
+    """
+    pdf = fitz.open(input_path)
+    try:
+        if not pdf.is_encrypted:
+            raise ValueError("此 PDF 沒有上鎖，無需解鎖")
+
+        # 需要密碼驗證
+        if pdf.needs_pass:
+            auth = pdf.authenticate(password)
+            if auth == 0:
+                raise ValueError("密碼錯誤，請重新輸入")
+
+        # 存為無加密版本
+        pdf.save(output_path, encryption=fitz.PDF_ENCRYPT_NONE)
+    finally:
+        pdf.close()
+
+    return output_path
