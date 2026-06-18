@@ -336,3 +336,15 @@ def unlock_pdf(input_path: str, output_path: str, password: str) -> str:
         pdf.close()
 
     return output_path
+
+
+def encrypt_pdf(input_path: str, output_path: str, password: str, method: str = "aes-256") -> str:
+    """為 PDF 加上密碼保護"""
+    pdf = fitz.open(input_path)
+    try:
+        enc = fitz.PDF_ENCRYPT_AES_256 if method == "aes-256" else fitz.PDF_ENCRYPT_AES_128
+        perm = int(fitz.PDF_PERM_ACCESSIBILITY | fitz.PDF_PERM_PRINT | fitz.PDF_PERM_COPY)
+        pdf.save(output_path, encryption=enc, user_pw=password, owner_pw=password, permissions=perm)
+    finally:
+        pdf.close()
+    return output_path
