@@ -205,7 +205,10 @@ def pdf_to_images(
             ext = "jpg" if format == "jpeg" else format
 
             out_path = os.path.join(output_dir, f"page_{page_num + 1}.{ext}")
-            pix.save(out_path, jpeg_quality=quality)
+            if format == "jpeg":
+                pix.save(out_path, jpeg_quality=quality)
+            else:
+                pix.save(out_path)
 
             output_paths.append(out_path)
 
