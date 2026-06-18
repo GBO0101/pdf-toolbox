@@ -17,14 +17,6 @@ def hex_to_rgb(hex_color: str) -> Tuple[float, float, float]:
     return (r, g, b)
 
 
-def blend_with_opacity(color: Tuple[float, float, float], opacity: float, bg: Tuple[float, float, float] = (1, 1, 1)) -> Tuple[float, float, float]:
-    """將顏色按照透明度與背景混合"""
-    r = color[0] * opacity + bg[0] * (1 - opacity)
-    g = color[1] * opacity + bg[1] * (1 - opacity)
-    b = color[2] * opacity + bg[2] * (1 - opacity)
-    return (r, g, b)
-
-
 def merge_pdfs(file_paths: List[str], output_path: str) -> str:
     """
     合併多個 PDF 文件為一個
@@ -210,12 +202,10 @@ def pdf_to_images(
             mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat, alpha=False)
 
-            ext = format
-            if format == "jpeg":
-                ext = "jpg"
+            ext = "jpg" if format == "jpeg" else format
 
             out_path = os.path.join(output_dir, f"page_{page_num + 1}.{ext}")
-            pix.save(out_path)
+            pix.save(out_path, jpeg_quality=quality)
 
             output_paths.append(out_path)
 
@@ -266,13 +256,11 @@ def word_to_pdf(input_path: str, output_path: str) -> str:
     # 依序嘗試 WPS 和 Microsoft Word
     prog_ids = ["Kwps.Application", "Word.Application"]
     app = None
-    last_error = None
     for prog_id in prog_ids:
         try:
             app = win32com.client.Dispatch(prog_id)
             break
-        except Exception as e:
-            last_error = e
+        except Exception:
             continue
 
     if app is None:

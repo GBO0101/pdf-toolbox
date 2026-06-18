@@ -20,7 +20,6 @@ from core import (
 # ── 常量 ──────────────────────────────────────────────────────────
 APP_TITLE = "📄 PDF 萬能工具箱"
 APP_SUBTITLE = "純本地處理 · 無需上傳 · 安全可靠"
-WINDOW_SIZE = "820x720"
 COLOR_PRIMARY = "#2563eb"
 COLOR_PRIMARY_HOVER = "#1d4ed8"
 COLOR_BG = "#f0f4f8"
@@ -311,8 +310,8 @@ class PDFToolboxApp:
 
     def _rebuild_merge_state(self):
         """根據目前 self.files 重建合併順序與勾選狀態"""
-        old_order = self.merge_order[:] if hasattr(self, 'merge_order') else []
-        old_checked = self.merge_checked[:] if hasattr(self, 'merge_checked') else []
+        old_order = self.merge_order[:]
+        old_checked = self.merge_checked[:]
 
         n = len(self.files)
         self.merge_order = []
@@ -334,7 +333,7 @@ class PDFToolboxApp:
 
     # ── 工具区 ────────────────────────────────────────────────────
     def _build_tool_section(self):
-        """五個工具按鈕（分兩行）"""
+        """六個工具按鈕（分兩行）"""
         card = ttk.Frame(self.main_frame, style="Card.TFrame")
         card.pack(fill="x", pady=(0, 12))
         inner = tk.Frame(card, bg=COLOR_SURFACE, highlightbackground=COLOR_BORDER,
@@ -634,7 +633,6 @@ class PDFToolboxApp:
         tk.Scale(row2, from_=12, to=120, orient="horizontal", length=150,
                  variable=self.wm_fontsize_var, bg=COLOR_SURFACE, fg=COLOR_TEXT,
                  highlightthickness=0, font=(FONT_FAMILY, 8)).pack(side="left")
-        tk.Label(opts, text="", width=2, bg=COLOR_SURFACE).pack()
 
         row2b = tk.Frame(opts, bg=COLOR_SURFACE)
         row2b.pack(fill="x", pady=4)
@@ -827,11 +825,7 @@ class PDFToolboxApp:
                             command=lambda: self._open_output_location(output_path))
             btn.pack(pady=(8, 0))
 
-            btn2 = tk.Button(frame, text=f"📂 在檔案總管中顯示",
-                             font=(FONT_FAMILY, 9), bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY,
-                             relief="flat", padx=12, pady=2, cursor="hand2",
-                             command=lambda: self._explorer_show(output_path))
-            btn2.pack(pady=(0, 4))
+
 
         self._show_continue_btn()
 
@@ -864,10 +858,6 @@ class PDFToolboxApp:
     def _open_output_location(self, path: str):
         """打开输出文件位置"""
         os.startfile(os.path.dirname(path))
-
-    def _explorer_show(self, path: str):
-        """在资源管理器中高亮文件"""
-        os.startfile(path)
 
     # ── 底部 ──────────────────────────────────────────────────────
     def _build_footer(self):
