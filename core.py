@@ -6,6 +6,7 @@ PDF 萬能工具箱 - 核心處理模組
 import os
 import fitz  # PyMuPDF
 from typing import List, Tuple, Optional
+from multiprocessing import Pool, cpu_count
 
 
 def hex_to_rgb(hex_color: str) -> Tuple[float, float, float]:
@@ -216,6 +217,65 @@ def pdf_to_images(
                 progress_callback(page_num + 1, total)
     finally:
         pdf.close()
+
+    return output_paths
+
+
+def _render_page(args: tuple) -> tuple:
+    """多進程工作函數：渲染單頁"""
+    input_path, page_num, output_dir, format, quality, scale = args
+    pdf = fitz.open(input_path)
+    try:
+        page = pdf[page_num]
+        mat = fitz.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        ext = "jpg" if format == "jpeg" else format
+        out_path = os.path.join(output_dir, f"page_{page_num + 1}.{ext}")
+        if format == "jpeg":
+            pix.save(out_path, jpeg_quality=quality)
+        else:
+            pix.save(out_path)
+        return page_num, out_path, None
+    except Exception as e:
+        return page_num, None, str(e)
+    finally:
+        pdf.close()
+
+
+def pdf_to_images_parallel(
+    input_path: str,
+    output_dir: str,
+    format: str = "png",
+    quality: int = 90,
+    scale: int = 2,
+    progress_callback=None,
+    max_workers: int = 0,
+) -> List[str]:
+    """
+    多進程並行將 PDF 每頁轉為圖片（頁數較多時更快）
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    pdf = fitz.open(input_path)
+    total = len(pdf)
+    pdf.close()
+
+    if max_workers <= 0:
+        max_workers = min(cpu_count(), total)
+
+    if total <= 4 or max_workers <= 1:
+        # 頁數少或單核：用單線程版本
+        return pdf_to_images(input_path, output_dir, format, quality, scale, progress_callback)
+
+    args = [(input_path, i, output_dir, format, quality, scale) for i in range(total)]
+    output_paths = [None] * total
+
+    with Pool(max_workers) as pool:
+        for i, (page_num, out_path, err) in enumerate(pool.imap_unordered(_render_page, args)):
+            if err:
+                raise RuntimeError(f"第 {page_num + 1} 頁渲染失敗: {err}")
+            output_paths[page_num] = out_path
+            if progress_callback:
+                progress_callback(i + 1, total)
 
     return output_paths
 

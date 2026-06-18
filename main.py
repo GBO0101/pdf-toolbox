@@ -13,6 +13,7 @@ from tkinter import ttk, filedialog, messagebox, colorchooser
 from typing import List, Optional
 from core import (
     merge_pdfs, compress_pdf, add_watermark, pdf_to_images,
+    pdf_to_images_parallel,
     get_pdf_page_count, get_file_size_str, word_to_pdf, is_word_file,
     is_pdf_encrypted, unlock_pdf, encrypt_pdf,
 )
@@ -1008,7 +1009,7 @@ class PDFToolboxApp:
 
         def run():
             try:
-                output_paths = pdf_to_images(
+                output_paths = pdf_to_images_parallel(
                     self.files[0], output_dir, format=fmt,
                     scale=scale, quality=quality,
                     progress_callback=progress_cb,
