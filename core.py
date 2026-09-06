@@ -357,6 +357,60 @@ def is_word_file(path: str) -> bool:
     return ext in ('.docx', '.doc', '.docm', '.dotx', '.dot')
 
 
+def pdf_to_text(input_path: str, output_path: str, format: str = "txt") -> str:
+    """
+    將 PDF 提取文字並存為 TXT 或 DOCX
+    :param input_path: 輸入 PDF 路徑
+    :param output_path: 輸出檔案路徑 (.txt 或 .docx)
+    :param format: 輸出格式 "txt" 或 "docx"
+    :returns: 輸出檔案路徑
+    """
+    import fitz
+    pdf = fitz.open(input_path)
+    try:
+        text_parts = []
+        for page_num in range(len(pdf)):
+            page = pdf[page_num]
+            text = page.get_text("text")
+            if text.strip():
+                text_parts.append(f"=== 第 {page_num + 1} 頁 ===\n{text}")
+        
+        full_text = "\n\n".join(text_parts)
+        
+        if format == "docx":
+            # 使用 python-docx 建立 Word 文件
+            try:
+                from docx import Document
+                from docx.shared import Pt
+            except ImportError:
+                raise RuntimeError("需安裝 python-docx：pip install python-docx")
+            
+            doc = Document()
+            style = doc.styles['Normal']
+            style.font.name = 'Microsoft JhengHei'
+            style.font.size = Pt(11)
+            
+            for part in text_parts:
+                lines = part.split('\n')
+                for line in lines:
+                    if line.startswith('=== 第'):
+                        # 頁碼標題
+                        p = doc.add_paragraph(line)
+                        p.runs[0].bold = True
+                        p.runs[0].font.size = Pt(12)
+                    else:
+                        doc.add_paragraph(line)
+            doc.save(output_path)
+        else:
+            # 純文字
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(full_text)
+        
+        return output_path
+    finally:
+        pdf.close()
+
+
 def is_pdf_encrypted(path: str) -> bool:
     """
     檢查 PDF 是否有加密（需要密碼才能開啟）

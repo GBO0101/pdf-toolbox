@@ -13,7 +13,7 @@ from tkinter import ttk, filedialog, messagebox, colorchooser
 from typing import List, Optional
 from core import (
     merge_pdfs, compress_pdf, add_watermark, pdf_to_images,
-    pdf_to_images_parallel,
+    pdf_to_images_parallel, pdf_to_text,
     get_pdf_page_count, get_file_size_str, word_to_pdf, is_word_file,
     is_pdf_encrypted, unlock_pdf, encrypt_pdf,
 )
@@ -52,6 +52,7 @@ TOOLS = [
     ToolInfo("toimage",   "PDF 轉圖片",   "🖼️", "PDF 每頁轉為圖片",       True),
     ToolInfo("security",  "安全性",       "🔐", "PDF 加密或解密",       True),
     ToolInfo("wordtopdf", "WPS 轉 PDF",   "📝", "WPS/Word 文件轉為 PDF", True),
+    ToolInfo("totext",    "PDF 轉文字",   "📝", "提取 PDF 文字為 TXT/DOCX", True),
 ]
 
 
@@ -357,15 +358,15 @@ class PDFToolboxApp:
         tk.Label(inner, text="⚙️ 選擇工具",
                  font=(FONT_FAMILY, 12, "bold"), bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(anchor="w")
 
-        # 第一行：合併、壓縮、浮水印
+        # 第一行：合併、壓縮、浮水印、轉圖片
         row1 = tk.Frame(inner, bg=COLOR_SURFACE)
         row1.pack(fill="x", pady=(8, 4))
-        # 第二行：轉圖片、解鎖、WPS 轉 PDF
+        # 第二行：安全性、WPS 轉 PDF、PDF 轉文字
         row2 = tk.Frame(inner, bg=COLOR_SURFACE)
         row2.pack(fill="x")
 
         self.tool_buttons = {}
-        rows = [row1, row1, row1, row2, row2, row2]  # 前 3 個放 row1，後 3 個放 row2
+        rows = [row1, row1, row1, row1, row2, row2, row2]  # 前 4 個放 row1，後 3 個放 row2
         for i, tool in enumerate(TOOLS):
             btn = self._create_tool_button(rows[i], tool)
             self.tool_buttons[tool.key] = btn
@@ -434,6 +435,7 @@ class PDFToolboxApp:
             "toimage": self._show_toimage_options,
             "security": self._show_security_options,
             "wordtopdf": self._show_wordtopdf_options,
+            "totext": self._show_totext_options,
         }
         show_fn = switch.get(tool_key)
         if show_fn:
@@ -1204,6 +1206,83 @@ class PDFToolboxApp:
                 self.root.after(0, lambda: self._finish_error(str(e)))
             except Exception as e:
                 self.root.after(0, lambda: self._finish_error(f"操作失敗：{e}"))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    # ── PDF 轉文字 ──────────────────────────────────────────────────
+    def _show_totext_options(self):
+        """PDF 轉文字 選項（TXT / DOCX）"""
+        frame = tk.Frame(self.options_content, bg=COLOR_SURFACE)
+        frame.pack(fill="x", pady=(8, 0))
+
+        # 從檔案列表找出 PDF 檔案
+        pdf_files = [f for f in self.files if f.lower().endswith('.pdf')]
+
+        if not pdf_files:
+            tk.Label(frame, text="⚠️ 尚未新增 PDF 檔案",
+                     font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg="#d97706").pack(anchor="w")
+            tk.Label(frame, text="請使用上方的「新增檔案」按鈕加入 PDF 檔案",
+                     font=(FONT_FAMILY, 9), bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY).pack(anchor="w", pady=(4, 0))
+            return
+
+        tk.Label(frame, text="選擇要轉換的 PDF 檔案",
+                 font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(anchor="w")
+
+        self._tp_idx = tk.IntVar(value=0)
+        for i, pf in enumerate(pdf_files):
+            name = os.path.basename(pf)
+            size = get_file_size_str(os.path.getsize(pf))
+            row = tk.Frame(frame, bg=COLOR_SURFACE, padx=4, pady=2)
+            row.pack(fill="x")
+            tk.Radiobutton(row, variable=self._tp_idx, value=i,
+                           bg=COLOR_SURFACE, fg=COLOR_TEXT, selectcolor=COLOR_SURFACE,
+                           font=(FONT_FAMILY, 10)).pack(side="left")
+            tk.Label(row, text=f"{name}（{size}）", font=(FONT_FAMILY, 10),
+                     bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(side="left", padx=(4, 0))
+
+        # 輸出格式選擇
+        fmt_frame = tk.Frame(frame, bg=COLOR_SURFACE)
+        fmt_frame.pack(fill="x", pady=(8, 0))
+        tk.Label(fmt_frame, text="輸出格式：", font=(FONT_FAMILY, 10),
+                 bg=COLOR_SURFACE, fg=COLOR_TEXT).pack(side="left")
+        self.tp_format = tk.StringVar(value="txt")
+        for val, lbl in [("txt", "TXT (純文字)"), ("docx", "DOCX (Word)")]:
+            tk.Radiobutton(fmt_frame, text=lbl, variable=self.tp_format, value=val,
+                           bg=COLOR_SURFACE, fg=COLOR_TEXT, selectcolor=COLOR_SURFACE,
+                           font=(FONT_FAMILY, 9)).pack(side="left", padx=(8, 0))
+
+        self._show_process_btn("提取文字", self._do_totext)
+
+    def _do_totext(self):
+        if self.processing:
+            return
+
+        pdf_files = [f for f in self.files if f.lower().endswith('.pdf')]
+        if not pdf_files:
+            messagebox.showwarning("提示", "請先上傳 PDF 檔案")
+            return
+        input_path = pdf_files[self._tp_idx]
+        fmt = self.tp_format.get()
+
+        output = filedialog.asksaveasfilename(
+            title="儲存提取的文字",
+            defaultextension=f".{fmt}",
+            filetypes=[("文字檔案", f".{fmt}"), ("所有檔案", "*.*")]
+        )
+        if not output:
+            return
+
+        self._start_processing()
+        self._show_processing(f"正在提取 PDF 文字為 {fmt.upper()}...")
+
+        def run():
+            try:
+                pdf_to_text(input_path, output, format=fmt)
+                name = os.path.basename(output)
+                self.root.after(0, lambda: self._finish_success(
+                    f"✅ 文字提取完成！已儲存為 {name}", output))
+            except Exception as e:
+                self.root.after(0, lambda: self._finish_error(str(e)))
 
         threading.Thread(target=run, daemon=True).start()
 
