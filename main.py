@@ -1220,9 +1220,14 @@ class PDFToolboxApp:
 
         if not pdf_files:
             tk.Label(frame, text="⚠️ 尚未新增 PDF 檔案",
-                     font=(FONT_FAMILY, 10), bg=COLOR_SURFACE, fg="#d97706").pack(anchor="w")
-            tk.Label(frame, text="請使用上方的「新增檔案」按鈕加入 PDF 檔案",
-                     font=(FONT_FAMILY, 9), bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY).pack(anchor="w", pady=(4, 0))
+                     font=(FONT_FAMILY, 11, "bold"), bg=COLOR_SURFACE, fg="#d97706").pack(anchor="w", pady=(8, 4))
+            tk.Label(frame, text="請先點擊上方「🗁 新增檔案」按鈕，選擇 PDF 檔案",
+                     font=(FONT_FAMILY, 9), bg=COLOR_SURFACE, fg=COLOR_TEXT_SECONDARY).pack(anchor="w")
+            btn = tk.Button(frame, text="🗁 前往新增檔案", font=(FONT_FAMILY, 10),
+                            bg=COLOR_PRIMARY, fg="white", relief="flat", padx=16, pady=6,
+                            cursor="hand2", activebackground=COLOR_PRIMARY_HOVER,
+                            command=lambda: self.root.after(100, lambda: None))  # 觸發 focus
+            btn.pack(pady=(12, 0))
             return
 
         tk.Label(frame, text="選擇要轉換的 PDF 檔案",
